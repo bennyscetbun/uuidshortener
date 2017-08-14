@@ -2,58 +2,60 @@ package uuidshortener
 
 import "bytes"
 
-//We will use a map until i found a better struct
-type prefixDictionnary struct {
-	next    sortedPrefixDictionnary
-	curChar byte
-	val     string
+type UUIDShortener interface {
+	Short(uuid string, prefixLengthToRemove int) string
 }
 
-type UUIDShortener interface {
+type UUIDExtender interface {
 	Extend(shortenedUUID string, prefixToAdd string) string
-	Short(uuid string, prefixLengthToRemove int) string
 }
 
 type uuidShortener struct {
 	prefixDictionnary
 }
 
-func New() UUIDShortener {
+// New returns a UUIDShortener that works with not constant uuid length
+// uuid length must be between 1 and 256 included after removing the prefix
+func NewShortener() UUIDShortener {
 	return &uuidShortener{}
 }
 
-func (pd *prefixDictionnary) get(uuid string, curKey *bytes.Buffer) string {
-	if len(uuid) == 0 {
-		curKey.WriteString(pd.val)
-		return curKey.String()
-	}
-	firstByte := uuid[0]
-	uuid = uuid[1:]
-	index, found := pd.next.Index(firstByte)
-	if found {
-		curKey.WriteByte(firstByte)
-		if pd.next[index].val == uuid {
-			return curKey.String()
-		}
-		return pd.next[index].get(uuid, curKey)
-	}
-	next := &prefixDictionnary{
-		curChar: firstByte,
-		val:     uuid,
-	}
-	pd.next.InsertAt(next, index)
-	curKey.WriteByte(firstByte)
-	curKey.WriteString(uuid)
-	return curKey.String()
+func NewExtender() UUIDExtender {
+	return &uuidShortener{}
 }
 
 func (us *uuidShortener) Extend(shortenedUUID string, prefixToAdd string) string {
 	keyBuffer := bytes.Buffer{}
 	keyBuffer.WriteString(prefixToAdd)
-	return us.get(shortenedUUID, &keyBuffer)
+	firstByte := shortenedUUID[0]
+	index, found := us.next.Index(firstByte)
+	var nextDict *prefixDictionnary
+	if found {
+		nextDict = us.next[index]
+	} else {
+		nextDict = &prefixDictionnary{
+			curChar: firstByte,
+		}
+		us.next.InsertAt(nextDict, index)
+	}
+	return nextDict.get(shortenedUUID[1:], &keyBuffer)
 }
 
 func (us *uuidShortener) Short(uuid string, prefixLengthToRemove int) string {
 	keyBuffer := bytes.Buffer{}
-	return us.get(uuid[prefixLengthToRemove:], &keyBuffer)
+	uuid = uuid[prefixLengthToRemove:]
+	firstByte := byte(len(uuid))
+	keyBuffer.WriteByte(firstByte)
+	index, found := us.next.Index(firstByte)
+	var nextDict *prefixDictionnary
+	if found {
+		nextDict = us.next[index]
+	} else {
+		nextDict = &prefixDictionnary{
+			curChar: firstByte,
+		}
+		us.next.InsertAt(nextDict, index)
+	}
+
+	return nextDict.get(uuid, &keyBuffer)
 }
